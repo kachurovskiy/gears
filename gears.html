@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WM210 lathe gear calculator</title>
+    <style>
+      body {
+        font-family: Roboto;
+        padding: 12px;
+        margin: 0 auto;
+        max-width: 600px;
+      }
+      input[type=text], input[type=number] {
+        display: block;
+        padding: 4px;
+        margin: 4px 0;
+        width: 100%;
+      }
+      #allPitchesContent {
+        column-count: 6;
+      }
+      .solutionsContent {
+        column-count: 2;
+      }
+      .approx {
+        color: gray;
+      }
+    </style>
+    <script>
+      const accuracy = 0.0051;
+      function willFit(g0, g1, g2, g3, g4, g5) {
+        // Spindle gear is on the left, must be able to reach it.
+        if (g0 <= g1) {
+          return false;
+        }
+        // Gears have approximate OD = (teeth + 2) mm.
+        const d0 = Math.abs((g0+2 - Math.max(8, g1+2)) / 2) // depth of the top axis
+        const d1 = Math.abs((Math.max(8, g3+2) - Math.max(8, g2+2)) / 2) // depth of the middle axis
+        // Axes are all 8mm except bottom one, it's 17mm on the right due to a bushing.
+        const d2 = Math.abs((Math.max(8, g4+2) - Math.max(17, g5+2)) / 2) // depth of the bottom axis
+        
+        // 5-gear.
+        if (g1 && g2 && g3 && g4) {
+          if (d0 >= d1) {
+            return false;
+          }
+          if (d2 <= d1) {
+            return false;
+          }
+          if (g2 < g3) {
+            return false;
+          }
+        }
+        
+        // 4-gear through the top.
+        if (g1 && g2 && !g3) {
+          if (d0 >= d1) {
+            return false;
+          }
+        }
+
+        // 4-gear through the bottom.
+        if (!g1 && g2 && g3) {
+          if (d2 <= d1) {
+            return false;
+          }
+        }
+
+        // Too short to reach both the lead screw and the spindle.
+        const space1 = Math.max((g2+g1)/2, (g0+g3)/2);
+        const space2 = Math.max((g3+g4)/2, (g2+g5)/2);
+        if (g0/2 + space1 + space2 < 130) {
+          return false;
+        }
+        
+        return true;
+      }
+
+      function calculate() {
+        document.getElementById('solutions').value = '';
+
+        let allGears = [];
+        document.getElementById('gearsInput').value.split(',').forEach(el => {
+          let num = Number(el.trim());
+          if (num) {
+            allGears.push(num);
+          }
+        });
+        if (!allGears.length) {
+          alert('Please specify all the gears you have e.g. "20, 20, 24, ..."');
+          return;
+        }
+
+        let screwPitch = Number(document.getElementById('leadScrewPitchInput').value);
+        if (!screwPitch || screwPitch < 0 || screwPitch > 10) {
+          alert('Please enter a reasonable lead screw pitch e.g. "2" for 2mm');
+          return;
+        }
+
+        let spindleGear =  Number(document.getElementById('spindleGearInput').value);
+        if (!spindleGear || spindleGear < 1 || screwPitch > 100) {
+          alert('Please enter a reasonable spindle gear e.g. "60" for 60 teeth');
+          return;
+        }
+
+        let pitch =  Number(document.getElementById('pitchInput').value);
+        if (!pitch || pitch <= 0 || pitch > 100) {
+          alert('Please enter a reasonable pitch e.g. "0.7" for 0.7mm');
+          return;
+        }
+
+        let gears = [];
+        let flags = [];
+        let solutions = [];
+        let pitches = new Set();
+
+        // For 5-gear layout.
+        function stepGear5() {
+          if (gears.length === 5) {
+            if (willFit(gears[0], gears[1], gears[2], gears[3], gears[4], 0)) {
+              let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[1] / gears[2] * gears[3] / gears[4]);
+              pitches.add(Math.round(cutterPitch * 1000) / 1000);
+              if (Math.abs(cutterPitch - pitch) < accuracy) {
+                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+              }
+            }
+          } else {
+            for (let i = 0; i < allGears.length; i++) {
+              if (!flags[i]) {
+                flags[i] = true;
+                gears.push(allGears[i]);
+                stepGear5();
+                gears.pop();
+                flags[i] = false;
+              }
+            }
+          }
+        }
+        stepGear5();
+
+        // For 4-gear layout through the top.
+        function stepGear4() {
+          if (gears.length === 4) {
+            if (willFit(gears[0], gears[1], gears[2], 0, 0, gears[3])) {
+              let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[1] / gears[2] * gears[2] / gears[3]);
+              pitches.add(cutterPitch);
+              if (Math.abs(cutterPitch - pitch) < accuracy) {
+                solutions.push({pitch: cutterPitch, gears: gears.join(' ') + ' top'});
+              }
+            }
+          } else {
+            for (let i = 0; i < allGears.length; i++) {
+              if (!flags[i]) {
+                flags[i] = true;
+                gears.push(allGears[i]);
+                stepGear4();
+                gears.pop();
+                flags[i] = false;
+              }
+            }
+          }
+        }
+        stepGear4();
+
+        // For 4-gear layout through the bottom.
+        function stepGear4Bottom() {
+          if (gears.length === 4) {
+            if (willFit(gears[0], 0, gears[2], gears[1], 0, gears[3])) {
+              let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[0] / gears[1] * gears[2] / gears[3]);
+              pitches.add(cutterPitch);
+              if (Math.abs(cutterPitch - pitch) < accuracy) {
+                solutions.push({pitch: cutterPitch, gears: gears.join(' ') + ' bottom'});
+              }
+            }
+          } else {
+            for (let i = 0; i < allGears.length; i++) {
+              if (!flags[i]) {
+                flags[i] = true;
+                gears.push(allGears[i]);
+                stepGear4Bottom();
+                gears.pop();
+                flags[i] = false;
+              }
+            }
+          }
+        }
+        stepGear4Bottom();
+
+        // For 3-gear layout (1 gear on each axis, all on the left).
+        function stepGear3Bottom() {
+          if (gears.length === 3) {
+            if (willFit(gears[0], 0, 0, gears[1], gears[2], 0)) {
+              let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[0] / gears[1] * gears[1] / gears[2]);
+              pitches.add(cutterPitch);
+              if (Math.abs(cutterPitch - pitch) < accuracy) {
+                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+              }
+            }
+          } else {
+            for (let i = 0; i < allGears.length; i++) {
+              if (!flags[i]) {
+                flags[i] = true;
+                gears.push(allGears[i]);
+                stepGear3Bottom();
+                gears.pop();
+                flags[i] = false;
+              }
+            }
+          }
+        }
+        stepGear3Bottom();
+        
+        function round(x) {
+          return Math.round(x * 1000) / 1000;
+        }
+
+        let solutionTexts = solutions.map(x => {
+          if (x.pitch != pitch) {
+            return '<span class="approx">' + String(x.pitch) + ': ' + x.gears + '</span>';
+          }
+          return String(x.pitch) + ': ' + x.gears;
+        });
+        document.getElementById('solutions').innerHTML =
+          '<h2>Gear sets for pitch ' + pitch + '</h2>' +
+          '<div class="solutionsContent">' +
+          [...new Set(solutionTexts)].sort().join('<br>') + 
+          '</div>';
+        document.getElementById('allPitches').innerHTML =
+          '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
+          Array.from(pitches).sort((a, b) => a - b).join('<br>') + '</p>';
+      }
+    </script>
+  </head>
+  <body>
+    <h1>WM210 lathe gear calculator</h1>
+    <ul>
+      <li>
+        <label for="gearsInput">Gears:</label>
+        <input type="text" id="gearsInput" value="20, 24, 30, 40, 40, 50, 58, 60, 60, 70, 72, 80, 80" required>
+      </li>
+      <li>
+        <label for="leadScrewPitchInput">Lead screw pitch (mm):</label>
+        <input type="number" id="leadScrewPitchInput" value="2" required>
+      </li>
+      <li>
+        <label for="spindleGearInput">Number of teeth on the spindle gear:</label>
+        <input type="number" id="spindleGearInput" value="60" required>
+      </li>
+      <li>
+        <label for="pitchInput">Pitch (mm):</label>
+        <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
+      </li>
+    </ul>
+    <input type="button" value="Calculate" onclick="calculate()"> 
+    <p id="solutions"></p>
+    <p id="allPitches"></p>
+    <h2>Possible gear configurations</h2>
+    <div>
+      <svg width="100%" height="100%" viewBox="0 0 1123 945" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
+          <g>
+              <g transform="matrix(0.383149,0,0,1,-74.0052,-46.2634)">
+                  <rect x="360.855" y="159.209" width="551.647" height="185.744" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.32px;"/>
+              </g>
+              <rect x="100.008" y="395.409" width="136.574" height="21.809" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="584.896" width="136.574" height="25.027" style="stroke:black;stroke-width:1px;"/>
+              <g transform="matrix(1,0,0,1,-387.689,-46.2634)">
+                  <rect x="487.697" y="159.209" width="40.043" height="185.744" style="stroke:black;stroke-width:1px;"/>
+              </g>
+              <g transform="matrix(0.445843,0,0,1,-153.18,-46.2634)">
+                  <rect x="487.697" y="805.13" width="474.075" height="35.037" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.29px;"/>
+              </g>
+              <g transform="matrix(1,0,0,1,-421.296,-58.6337)">
+                  <rect x="636.678" y="368.952" width="21.2" height="526.274" style="fill:rgb(235,235,235);stroke:black;stroke-width:1px;"/>
+              </g>
+              <rect x="100.008" y="310.319" width="40.043" height="213.799" style="stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="346.071" width="42.903" height="128.708" style="stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="490.51" width="42.903" height="201.643" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="554.149" width="40.043" height="87.236" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="659.976" width="40.043" height="239.54" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="296.733" width="40.043" height="13.586" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="474.779" width="42.903" height="15.731" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="639.955" width="40.043" height="20.021" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+          </g>
+          <g transform="matrix(1,0,0,1,260,0)">
+              <g transform="matrix(0.383149,0,0,1,-74.0052,-46.2634)">
+                  <rect x="360.855" y="159.209" width="551.647" height="185.744" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.32px;"/>
+              </g>
+              <rect x="100.008" y="395.409" width="136.574" height="21.809" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="584.896" width="136.574" height="25.027" style="stroke:black;stroke-width:1px;"/>
+              <g transform="matrix(1,0,0,1,-387.689,-46.2634)">
+                  <rect x="487.697" y="159.209" width="40.043" height="185.744" style="stroke:black;stroke-width:1px;"/>
+              </g>
+              <g transform="matrix(0.445843,0,0,1,-153.18,-46.2634)">
+                  <rect x="487.697" y="805.13" width="474.075" height="35.037" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.29px;"/>
+              </g>
+              <g transform="matrix(1,0,0,1,-421.296,-58.6337)">
+                  <rect x="636.678" y="368.952" width="21.2" height="526.274" style="fill:rgb(235,235,235);stroke:black;stroke-width:1px;"/>
+              </g>
+              <rect x="100.008" y="310.319" width="40.043" height="213.799" style="stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="346.071" width="42.903" height="128.708" style="stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="490.51" width="42.903" height="201.643" style="stroke:black;stroke-width:1px;"/>
+              <rect x="153.637" y="705.739" width="43.618" height="148.014" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="296.733" width="40.043" height="13.586" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="474.779" width="42.903" height="15.731" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="692.153" width="42.903" height="13.586" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+          </g>
+          <g transform="matrix(1,0,0,1,520,0)">
+              <g transform="matrix(0.383149,0,0,1,-74.0052,-46.2634)">
+                  <rect x="360.855" y="159.209" width="551.647" height="185.744" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.32px;"/>
+              </g>
+              <rect x="100.008" y="395.409" width="136.574" height="21.809" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="584.896" width="136.574" height="25.027" style="stroke:black;stroke-width:1px;"/>
+              <g transform="matrix(1,0,0,1,-387.689,-46.2634)">
+                  <rect x="487.697" y="159.209" width="40.043" height="185.744" style="stroke:black;stroke-width:1px;"/>
+              </g>
+              <g transform="matrix(0.445843,0,0,1,-153.18,-46.2634)">
+                  <rect x="487.697" y="805.13" width="474.075" height="35.037" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.29px;"/>
+              </g>
+              <g transform="matrix(1,0,0,1,-421.296,-58.6337)">
+                  <rect x="636.678" y="368.952" width="21.2" height="526.274" style="fill:rgb(235,235,235);stroke:black;stroke-width:1px;"/>
+              </g>
+              <rect x="100.008" y="310.319" width="40.043" height="213.799" style="stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="490.51" width="42.903" height="201.643" style="stroke:black;stroke-width:1px;"/>
+              <rect x="153.637" y="705.739" width="43.618" height="148.014" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="296.733" width="40.043" height="13.586" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="154.352" y="692.153" width="42.903" height="13.586" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="524.117" width="40.043" height="30.032" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <g transform="matrix(1,0,0,1.36066,0,-214.873)">
+                  <rect x="100.008" y="554.149" width="40.043" height="87.236" style="stroke:black;stroke-width:0.84px;"/>
+              </g>
+          </g>
+          <g transform="matrix(1,0,0,1,780,0)">
+              <g transform="matrix(0.383149,0,0,1,-74.0052,-46.2634)">
+                  <rect x="360.855" y="159.209" width="551.647" height="185.744" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.32px;"/>
+              </g>
+              <rect x="100.008" y="395.409" width="136.574" height="21.809" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="584.896" width="136.574" height="25.027" style="stroke:black;stroke-width:1px;"/>
+              <g transform="matrix(1,0,0,1,-387.689,-46.2634)">
+                  <rect x="487.697" y="159.209" width="40.043" height="185.744" style="stroke:black;stroke-width:1px;"/>
+              </g>
+              <g transform="matrix(0.445843,0,0,1,-153.18,-46.2634)">
+                  <rect x="487.697" y="805.13" width="474.075" height="35.037" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.29px;"/>
+              </g>
+              <g transform="matrix(1,0,0,1,-421.296,-58.6337)">
+                  <rect x="636.678" y="368.952" width="21.2" height="526.274" style="fill:rgb(235,235,235);stroke:black;stroke-width:1px;"/>
+              </g>
+              <rect x="100.008" y="310.319" width="40.043" height="213.799" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="659.976" width="40.043" height="239.54" style="stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="296.733" width="40.043" height="13.586" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="639.955" width="40.043" height="20.021" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <rect x="100.008" y="524.117" width="40.043" height="30.032" style="fill:rgb(0,45,255);stroke:black;stroke-width:1px;"/>
+              <g transform="matrix(1,0,0,1.17213,0,-110.402)">
+                  <rect x="100.008" y="554.149" width="40.043" height="87.236" style="stroke:black;stroke-width:0.92px;"/>
+              </g>
+          </g>
+          <g transform="matrix(1,0,0,1,30.8653,-9.62225)">
+              <text x="67.295px" y="101.168px" style="font-family:'Roboto-Regular', 'Roboto';font-size:50px;">5-gear</text>
+          </g>
+          <g transform="matrix(1,0,0,1,306.722,-9.37811)">
+              <text x="67.295px" y="101.168px" style="font-family:'Roboto-Regular', 'Roboto';font-size:50px;">4 t<tspan x="123.594px " y="101.168px ">o</tspan>p</text>
+          </g>
+          <g transform="matrix(1,0,0,1,522.923,-9.62225)">
+              <text x="67.295px" y="101.168px" style="font-family:'Roboto-Regular', 'Roboto';font-size:50px;">4 bott<tspan x="196.494px " y="101.168px ">o</tspan>m</text>
+          </g>
+          <g transform="matrix(1,0,0,1,811.598,-9.62225)">
+              <text x="67.295px" y="101.168px" style="font-family:'Roboto-Regular', 'Roboto';font-size:50px;">3-gear</text>
+          </g>
+      </svg>
+    </div>
+  </body>
+</html>

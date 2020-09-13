@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>WM210 lathe gear calculator</title>
+    <title>Lathe gear calculator</title>
     <style>
       body {
         font-family: Roboto;
@@ -15,7 +15,7 @@
         display: block;
         padding: 4px;
         margin: 4px 0;
-        width: 100%;
+        width: 95%;
       }
       #allPitchesContent {
         column-count: 6;
@@ -25,6 +25,11 @@
       }
       .approx {
         color: gray;
+      }
+      input[type=button] {
+        height: 3em;
+        margin: 1em 0;
+        width: 10em;
       }
     </style>
     <script>
@@ -224,7 +229,7 @@
         document.getElementById('solutions').innerHTML =
           '<h2>Gear sets for pitch ' + pitch + '</h2>' +
           '<div class="solutionsContent">' +
-          [...new Set(solutionTexts)].sort().join('<br>') + 
+          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
           '</div>';
         document.getElementById('allPitches').innerHTML =
           '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
@@ -233,25 +238,17 @@
     </script>
   </head>
   <body>
-    <h1>WM210 lathe gear calculator</h1>
-    <ul>
-      <li>
-        <label for="gearsInput">Gears:</label>
-        <input type="text" id="gearsInput" value="20, 24, 30, 40, 40, 50, 58, 60, 60, 70, 72, 80, 80" required>
-      </li>
-      <li>
-        <label for="leadScrewPitchInput">Lead screw pitch (mm):</label>
-        <input type="number" id="leadScrewPitchInput" value="2" required>
-      </li>
-      <li>
-        <label for="spindleGearInput">Number of teeth on the spindle gear:</label>
-        <input type="number" id="spindleGearInput" value="60" required>
-      </li>
-      <li>
-        <label for="pitchInput">Pitch (mm):</label>
-        <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
-      </li>
-    </ul>
+    <h1>Lathe gear calculator</h1>
+    <p>Designed for WM210 and WM180 lathe models<p>
+    <h2>Inputs</h2>
+    <label for="gearsInput">Gears you have available:</label>
+    <input type="text" id="gearsInput" value="20, 24, 30, 40, 40, 50, 60, 60, 70, 72, 80, 80" required>
+    <label for="leadScrewPitchInput">Lead screw pitch (mm):</label>
+    <input type="number" id="leadScrewPitchInput" value="2" required>
+    <label for="spindleGearInput">Number of teeth on the spindle gear:</label>
+    <input type="number" id="spindleGearInput" value="60" required>
+    <label for="pitchInput">Pitch (mm):</label>
+    <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
     <input type="button" value="Calculate" onclick="calculate()"> 
     <p id="solutions"></p>
     <p id="allPitches"></p>

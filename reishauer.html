@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lathe gear calculator</title>
+    <style>
+      body {
+        font-family: Roboto;
+        padding: 12px;
+        margin: 0 auto;
+        max-width: 600px;
+      }
+      input[type=text], input[type=number] {
+        display: block;
+        padding: 4px;
+        margin: 4px 0;
+        width: 95%;
+      }
+      #allPitchesContent {
+        column-count: 6;
+      }
+      .solutionsContent {
+        column-count: 2;
+      }
+      .approx {
+        color: gray;
+      }
+      input[type=button] {
+        height: 3em;
+        margin: 1em 0;
+        padding: 0 1em;
+      }
+    </style>
+    <script>
+      const accuracy = 0.0051;
+      function willFit(g0, g1, g2, g3, g4, g5, g6, g7) {
+        if ((g0/2 + g1/2) < (15 /* half of nut size */ + g2/2)) {
+          // C interferes with A nut.
+          return false;
+        }
+        if ((g4/2 + g5/2) < (15 /* half of nut size */ + g6/2)) {
+          // Correction C interferes with A nut.
+          return false;
+        }
+        return true;
+      }
+
+      function calculate(withCorrection) {
+        document.getElementById('solutions').value = '';
+
+        let allGears = [];
+        document.getElementById('gearsInput').value.split(/[^0-9]/).forEach(el => {
+          let num = Number(el.trim());
+          if (num && num > 0) {
+            allGears.push(num);
+          }
+        });
+        if (!allGears.length) {
+          alert('Please specify all the gears you have e.g. "20 20 24 ..."');
+          return;
+        }
+
+        let screwPitchInch = Number(document.getElementById('leadScrewPitchInput').value);
+        if (!screwPitchInch || screwPitchInch <= 0 || screwPitchInch > 100) {
+          alert('Please enter a reasonable lead screw pitch e.g. "2" for 2 inch');
+          return;
+        }
+
+        let pitch =  Number(document.getElementById('pitchInput').value);
+        if (!pitch || pitch <= 0 || pitch > 500) {
+          alert('Please enter a reasonable pitch e.g. "0.7" for 0.7mm');
+          return;
+        }
+
+        let gears = [];
+        let flags = [];
+        let solutions = [];
+        let pitches = new Set();
+
+        // For 4-gear layout without correction.
+        function stepGear4() {
+          if (gears.length === 4) {
+            if (willFit(gears[0], gears[1], gears[2], gears[3], 63, 50, 50, 63)) {
+              let cutterPitch = round(gears[0] / gears[1] * gears[2] / gears[3] * 25.4 / screwPitchInch);
+              pitches.add(cutterPitch);
+              if (Math.abs(cutterPitch - pitch) < accuracy) {
+                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+              }
+            }
+          } else {
+            for (let i = 0; i < allGears.length; i++) {
+              if (!flags[i]) {
+                flags[i] = true;
+                gears.push(allGears[i]);
+                stepGear4();
+                gears.pop();
+                flags[i] = false;
+              }
+            }
+          }
+        }
+        if (!withCorrection) {
+          stepGear4();
+        }
+
+        // For 4-gear layout with another 4 gears used for correction.
+        let counter = 0;
+        function stepGear8() {
+          if (gears.length === 8) {
+            let correction = gears[4] / gears[5] * gears[6] / gears[7];
+            if (correction == 1) {
+              // No correction, this should be covered already by stepGear4()
+            } else if (willFit(gears[0], gears[1], gears[2], gears[3], gears[4], gears[5], gears[6], gears[7])) {
+              let cutterPitch = round(gears[0] / gears[1] * gears[2] / gears[3] * 25.4 / screwPitchInch * correction);
+              pitches.add(cutterPitch);
+              if (Math.abs(cutterPitch - pitch) < accuracy) {
+                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+              }
+            }
+          } else {
+            for (let i = 0; i < allGears.length; i++) {
+              if (!flags[i]) {
+                flags[i] = true;
+                gears.push(allGears[i]);
+                stepGear8();
+                gears.pop();
+                flags[i] = false;
+              }
+            }
+          }
+        }
+        if (withCorrection) {
+          if (allGears.length >= 15 && !confirm('Calculating 15 or more gears with correction can take a very long time, proceed?')) {
+            return;
+          }
+          stepGear8();
+        }
+
+        function round(x) {
+          return Math.round(x * 1000) / 1000;
+        }
+
+        let solutionTexts = solutions.map(x => {
+          if (x.pitch != pitch) {
+            return '<span class="approx">' + String(x.pitch) + ': ' + x.gears + '</span>';
+          }
+          return String(x.pitch) + ': ' + x.gears;
+        });
+        document.getElementById('solutions').innerHTML =
+          '<h2>Gear sets for pitch ' + pitch + '</h2>' +
+          '<div class="solutionsContent">' +
+          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
+          '</div>';
+        document.getElementById('allPitches').innerHTML =
+          '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
+          Array.from(pitches).sort((a, b) => a - b).join('<br>') + '</p>';
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Lathe gear calculator</h1>
+    <p>Designed for REISHAUER NRK lathes<p>
+    <h2>Inputs</h2>
+    <label for="gearsInput">Gears you have available:</label>
+    <input type="text" id="gearsInput" value="28 28 32 36 39 40 40 41 42 42 45 45 47 48 48 49 50 50 50 51 52 56 56 57 60 60 61 62 63 63 64 64 65 70 72 72 74 75 76 76 77 80 80 84 90 96 105 112 127" required>
+    <label for="leadScrewPitchInput">Lead screw pitch (inch):</label>
+    <input type="number" id="leadScrewPitchInput" value="6" required>
+    <label for="pitchInput">Pitch (mm):</label>
+    <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
+    <input type="button" value="Calculate" onclick="calculate(false)">
+    <input type="button" value="Calculate with correction" onclick="calculate(true)"> 
+    <p id="solutions"></p>
+    <p id="allPitches"></p>
+    <section class="post-full-comments">
+        <script src="https://utteranc.es/client.js" repo="kachurovskiy/k10y-comments"
+            issue-term="pathname" theme="github-light" crossorigin="anonymous" async>
+        </script>
+    </section>
+    <hr>
+    <p>If you have feedback, want to make an improvement or want to create a similar calculator for another lathe model, check out <a href="https://github.com/kachurovskiy/gears/blob/master/index.html">https://github.com/kachurovskiy/gears/blob/master/reishauer.html</a>.</p>
+  </body>
+</html>

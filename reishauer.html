@@ -11,11 +11,14 @@
         margin: 0 auto;
         max-width: 600px;
       }
-      input[type=text], input[type=number] {
+      input[type=number] {
         display: block;
         padding: 4px;
-        margin: 4px 0;
-        width: 95%;
+        margin: 4px 0 20px 0;
+        width: 120px;
+      }
+      textarea {
+        margin-bottom: 20px;
       }
       #allPitchesContent {
         column-count: 6;
@@ -39,11 +42,42 @@
           // C interferes with A nut.
           return false;
         }
+        if ((g2/2 + g3/2) < (10 /* half of shaft size */ + g1/2)) {
+          // B interferes with D shaft.
+          return false;
+        }
+
         if ((g4/2 + g5/2) < (15 /* half of nut size */ + g6/2)) {
           // Correction C interferes with A nut.
           return false;
         }
+        if ((g6/2 + g7/2) < (10 /* half of shaft size */ + g5/2)) {
+          // Correction B interferes with D shaft.
+          return false;
+        }
         return true;
+      }
+
+      function setPitch(source) {
+        const tpi = document.getElementById('pitchTpiInput');
+        const inch = document.getElementById('pitchInchInput');
+        const mm = document.getElementById('pitchInput');
+        if (source == 'tpi' && Number(tpi.value)) {
+          inch.value = 1/Number(tpi.value);
+          mm.value = 25.4/Number(tpi.value);
+          return true;
+        }
+        if (source == 'inch' && Number(inch.value)) {
+          tpi.value = 1/Number(inch.value);
+          mm.value = 25.4*Number(inch.value);
+          return true;
+        }
+        if (source == 'mm' && Number(mm.value)) {
+          tpi.value = 25.4/Number(mm.value);
+          inch.value = Number(mm.value)/25.4;
+          return true;
+        }
+        return false;
       }
 
       function calculate(withCorrection) {
@@ -67,11 +101,19 @@
           return;
         }
 
-        let pitch =  Number(document.getElementById('pitchInput').value);
+        let pitch = Number(document.getElementById('pitchInput').value);
         if (!pitch || pitch <= 0 || pitch > 500) {
           alert('Please enter a reasonable pitch e.g. "0.7" for 0.7mm');
           return;
         }
+
+        let starts = Number(document.getElementById('startInput').value);
+        if (!starts || starts <= 0 || starts > 500) {
+          alert('Please enter a reasonable number of thread starts e.g. "2" for 2-start thread');
+          return;
+        }
+
+        pitch = pitch * starts;
 
         let gears = [];
         let flags = [];
@@ -148,7 +190,7 @@
           return String(x.pitch) + ': ' + x.gears;
         });
         document.getElementById('solutions').innerHTML =
-          '<h2>Gear sets for pitch ' + pitch + '</h2>' +
+          '<h2>Gear sets for pitch ' + pitch + 'mm</h2>' +
           '<div class="solutionsContent">' +
           (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
           '</div>';
@@ -163,11 +205,28 @@
     <p>Designed for REISHAUER NRK lathes<p>
     <h2>Inputs</h2>
     <label for="gearsInput">Gears you have available:</label>
-    <input type="text" id="gearsInput" value="28 28 32 36 39 40 40 41 42 42 45 45 47 48 48 49 50 50 50 51 52 56 56 57 60 60 61 62 63 63 64 64 65 70 72 72 74 75 76 76 77 80 80 84 90 96 105 112 127" required>
+    <textarea id="gearsInput" required style="width: 100%;">28 28 32 36 39 40 40 41 42 42 45 45 47 48 48 49 50 50 50 51 52 56 56 57 60 60 61 62 63 63 64 64 65 70 72 72 74 75 76 76 77 80 80 84 90 96 105 112 127</textarea>
     <label for="leadScrewPitchInput">Lead screw pitch (inch):</label>
     <input type="number" id="leadScrewPitchInput" value="6" required>
-    <label for="pitchInput">Pitch (mm):</label>
-    <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <div>
+        <label for="pitchTpiInput">Pitch (tpi):</label>
+        <input type="number" id="pitchTpiInput" value="" required onsubmit="calculate()" onkeypress="event.key ==
+   'Enter' && setPitch('tpi') && calculate()" onchange="setPitch('tpi')">
+      </div>
+      =
+      <div>
+        <label for="pitchInchInput">Pitch (inch):</label>
+        <input type="number" id="pitchInchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && setPitch('inch') && calculate()" onchange="setPitch('inch')">
+      </div>
+      =
+      <div>
+        <label for="pitchInput">Pitch (mm):</label>
+        <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && setPitch('mm') && calculate()" onchange="setPitch('mm')">
+      </div>
+    </div>
+    <label for="startInput">Number of starts (more than 1 for multi-start threads):</label>
+    <input type="number" id="startInput" value="1" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
     <input type="button" value="Calculate" onclick="calculate(false)">
     <input type="button" value="Calculate with correction" onclick="calculate(true)"> 
     <p id="solutions"></p>

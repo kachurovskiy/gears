@@ -190,7 +190,7 @@
           return String(x.pitch) + ': ' + x.gears;
         });
         document.getElementById('solutions').innerHTML =
-          '<h2>Gear sets for pitch ' + pitch + 'mm</h2>' +
+          '<h2>Gear sets for lead ' + pitch + 'mm (pitch * starts)</h2>' +
           '<div class="solutionsContent">' +
           (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
           '</div>';

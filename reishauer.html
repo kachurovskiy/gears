@@ -17,6 +17,9 @@
         margin: 4px 0 20px 0;
         width: 120px;
       }
+      input[type=checkbox] {
+        margin-bottom: 10px;
+      }
       textarea {
         margin-bottom: 20px;
       }
@@ -113,7 +116,9 @@
           return;
         }
 
-        pitch = pitch * starts;
+        let coarse = document.getElementById('coarseInput').checked;
+
+        pitch = pitch * starts / (coarse ? 5 : 1);
 
         let gears = [];
         let flags = [];
@@ -190,7 +195,7 @@
           return String(x.pitch) + ': ' + x.gears;
         });
         document.getElementById('solutions').innerHTML =
-          '<h2>Gear sets for lead ' + pitch + 'mm (pitch * starts)</h2>' +
+          '<h2>For lead ' + pitch + 'mm (pitch * starts / coarse coeff.)</h2>' +
           '<div class="solutionsContent">' +
           (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
           '</div>';
@@ -227,6 +232,10 @@
     </div>
     <label for="startInput">Number of starts (more than 1 for multi-start threads):</label>
     <input type="number" id="startInput" value="1" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
+    <div>
+      <input type="checkbox" id="coarseInput" name="coarseInput">
+      <label for="coarseInput">Coarse thread (divides pitch by 5)<label>
+    </div>
     <input type="button" value="Calculate" onclick="calculate(false)">
     <input type="button" value="Calculate with correction" onclick="calculate(true)"> 
     <p id="solutions"></p>

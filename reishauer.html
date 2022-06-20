@@ -198,7 +198,7 @@
             ratio = ratio * x.gears[4] / x.gears[5] * x.gears[6] / x.gears[7];
           }
           const out = round4(ratio) + ': ' + x.gears.join(' ');
-          if (Math.abs(x.pitch - pitch) > 0.001) {
+          if (Math.abs(x.pitch - pitch) >= 0.001) {
             return '<span class="approx">' + out + '</span>';
           }
           return out;

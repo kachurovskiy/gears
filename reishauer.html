@@ -132,7 +132,7 @@
               let cutterPitch = round(gears[0] / gears[1] * gears[2] / gears[3] * 25.4 / screwPitchInch);
               pitches.add(cutterPitch);
               if (Math.abs(cutterPitch - pitch) < accuracy) {
-                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+                solutions.push({pitch: cutterPitch, gears: gears.concat()});
               }
             }
           } else {
@@ -162,7 +162,7 @@
               let cutterPitch = round(gears[0] / gears[1] * gears[2] / gears[3] * 25.4 / screwPitchInch * correction);
               pitches.add(cutterPitch);
               if (Math.abs(cutterPitch - pitch) < accuracy) {
-                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+                solutions.push({pitch: cutterPitch, gears: gears.concat()});
               }
             }
           } else {
@@ -188,20 +188,30 @@
           return Math.round(x * 1000) / 1000;
         }
 
+        function round4(x) {
+          return Math.round(x * 10000) / 10000;
+        }
+
         let solutionTexts = solutions.map(x => {
-          if (x.pitch != pitch) {
-            return '<span class="approx">' + String(x.pitch) + ': ' + x.gears + '</span>';
+          let ratio = x.gears[0] / x.gears[1] * x.gears[2] / x.gears[3];
+          if (x.gears.length === 8) {
+            ratio = ratio * x.gears[4] / x.gears[5] * x.gears[6] / x.gears[7];
           }
-          return String(x.pitch) + ': ' + x.gears;
+          const out = round4(ratio) + ': ' + x.gears.join(' ');
+          if (Math.abs(x.pitch - pitch) > 0.001) {
+            return '<span class="approx">' + out + '</span>';
+          }
+          return out;
         });
         document.getElementById('solutions').innerHTML =
-          '<h2>For lead ' + pitch + 'mm (pitch * starts / coarse coeff.)</h2>' +
+          '<h2>For ratio ' + round4(pitch / 25.4 * screwPitchInch) + ':</h2>' +
           '<div class="solutionsContent">' +
           (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
           '</div>';
-        document.getElementById('allPitches').innerHTML =
+        // Wasn't requested for this particular lathe, let's keep it if needed at some point.
+        /* document.getElementById('allPitches').innerHTML =
           '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
-          Array.from(pitches).sort((a, b) => a - b).join('<br>') + '</p>';
+          Array.from(pitches).sort((a, b) => a - b).join('<br>') + '</p>'; */
       }
     </script>
   </head>
@@ -234,7 +244,7 @@
     <input type="number" id="startInput" value="1" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
     <div>
       <input type="checkbox" id="coarseInput" name="coarseInput">
-      <label for="coarseInput">Coarse thread (divides pitch by 5)<label>
+      <label for="coarseInput">Coarse thread (divides ratio by 5)<label>
     </div>
     <input type="button" value="Calculate" onclick="calculate(false)">
     <input type="button" value="Calculate with correction" onclick="calculate(true)"> 

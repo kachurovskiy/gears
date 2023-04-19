@@ -113,6 +113,7 @@
               pitches.add(cutterPitch);
               if (Math.abs(cutterPitch - pitch) < accuracy) {
                 solutions.push({pitch: cutterPitch, gears: gears.concat()});
+                self.postMessage({type: 'result', done: false, options, solutions});
               }
             }
           } else {
@@ -143,6 +144,7 @@
               pitches.add(cutterPitch);
               if (Math.abs(cutterPitch - pitch) < accuracy) {
                 solutions.push({pitch: cutterPitch, gears: gears.concat()});
+                self.postMessage({type: 'result', done: false, options, solutions});
               }
             }
           } else {
@@ -164,7 +166,7 @@
           stepGear8();
         }
 
-        self.postMessage({type: 'result', options, solutions});
+        self.postMessage({type: 'result', done: true, options, solutions});
       }
 
       self.onmessage = (e) => {
@@ -194,10 +196,14 @@
         return false;
       }
 
-      let worker;
+      function showProgress(value) {
+        document.getElementById('progress').style.display = value ? 'block' : 'none';
+      }
 
+      let worker;
       function calculate(withCorrection) {
-        document.getElementById('solutions').innerHTML = 'Calculating! Please wait.<br><progress id="progressBar" value="0" max="100"></progress>';
+        document.getElementById('solutions').innerHTML = '';
+        showProgress(true);
 
         if (worker) {
           worker.terminate();
@@ -212,8 +218,10 @@
             document.getElementById('progressBar').value = data.value;
           } else if (data.type === 'result' && data.error) {
             document.getElementById('solutions').innerText = data.error;
+            showProgress(false);
           } else if (data.type === 'result' && data.solutions) {
             showSolutions(data.options, data.solutions);
+            showProgress(!data.done);
           }
         }
         worker.postMessage({
@@ -283,6 +291,10 @@
     </div>
     <input type="button" value="Calculate" onclick="calculate(false)">
     <input type="button" value="Calculate with correction" onclick="calculate(true)">
+    <p id="progress" style="display: none">
+      Calculating! Please wait.<br>
+      <progress id="progressBar" value="0" max="100"></progress>
+    </p>
     <p id="solutions"></p>
     <p id="allPitches"></p>
     <hr>

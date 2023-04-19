@@ -38,7 +38,7 @@
         padding: 0 1em;
       }
     </style>
-    <script>
+    <script id="worker1" type="javascript/worker">
       const accuracy = 0.0051;
       function willFit(g0, g1, g2, g3, g4, g5, g6, g7) {
         if ((g0/2 + g1/2) < (15 /* half of nut size */ + g2/2)) {
@@ -61,62 +61,42 @@
         return true;
       }
 
-      function setPitch(source) {
-        const tpi = document.getElementById('pitchTpiInput');
-        const inch = document.getElementById('pitchInchInput');
-        const mm = document.getElementById('pitchInput');
-        if (source == 'tpi' && Number(tpi.value)) {
-          inch.value = 1/Number(tpi.value);
-          mm.value = 25.4/Number(tpi.value);
-          return true;
-        }
-        if (source == 'inch' && Number(inch.value)) {
-          tpi.value = 1/Number(inch.value);
-          mm.value = 25.4*Number(inch.value);
-          return true;
-        }
-        if (source == 'mm' && Number(mm.value)) {
-          tpi.value = 25.4/Number(mm.value);
-          inch.value = Number(mm.value)/25.4;
-          return true;
-        }
-        return false;
+      function round(x) {
+        return Math.round(x * 1000) / 1000;
       }
 
-      function calculate(withCorrection) {
-        document.getElementById('solutions').value = '';
-
+      function calculate(options) {
         let allGears = [];
-        document.getElementById('gearsInput').value.split(/[^0-9]/).forEach(el => {
+        options.gearsInput.split(/[^0-9]/).forEach(el => {
           let num = Number(el.trim());
           if (num && num > 0) {
             allGears.push(num);
           }
         });
         if (!allGears.length) {
-          alert('Please specify all the gears you have e.g. "20 20 24 ..."');
+          self.postMessage({type: 'result', error: 'Please specify all the gears you have e.g. "20 20 24 ..."'});
           return;
         }
 
-        let screwPitchInch = Number(document.getElementById('leadScrewPitchInput').value);
+        let screwPitchInch = Number(options.leadScrewPitchInput);
         if (!screwPitchInch || screwPitchInch <= 0 || screwPitchInch > 100) {
-          alert('Please enter a reasonable lead screw pitch e.g. "2" for 2 inch');
+          self.postMessage({type: 'result', error: 'Please enter a reasonable lead screw pitch e.g. "2" for 2 inch'});
           return;
         }
 
-        let pitch = Number(document.getElementById('pitchInput').value);
+        let pitch = Number(options.pitchInput);
         if (!pitch || pitch <= 0 || pitch > 500) {
-          alert('Please enter a reasonable pitch e.g. "0.7" for 0.7mm');
+          self.postMessage({type: 'result', error: 'Please enter a reasonable pitch e.g. "0.7" for 0.7mm'});
           return;
         }
 
-        let starts = Number(document.getElementById('startInput').value);
+        let starts = Number(options.startInput);
         if (!starts || starts <= 0 || starts > 500) {
-          alert('Please enter a reasonable number of thread starts e.g. "2" for 2-start thread');
+          self.postMessage({type: 'result', error: 'Please enter a reasonable number of thread starts e.g. "2" for 2-start thread'});
           return;
         }
 
-        let coarse = document.getElementById('coarseInput').checked;
+        let coarse = options.coarseInput;
 
         pitch = pitch * starts / (coarse ? 5 : 1);
 
@@ -147,7 +127,7 @@
             }
           }
         }
-        if (!withCorrection) {
+        if (!options.withCorrection) {
           stepGear4();
         }
 
@@ -167,6 +147,9 @@
             }
           } else {
             for (let i = 0; i < allGears.length; i++) {
+              if (gears.length === 0) {
+                self.postMessage({type: 'progress', value: i * 100 / allGears.length});
+              }
               if (!flags[i]) {
                 flags[i] = true;
                 gears.push(allGears[i]);
@@ -177,41 +160,93 @@
             }
           }
         }
-        if (withCorrection) {
-          if (allGears.length >= 15 && !confirm('Calculating 15 or more gears with correction can take a very long time, proceed?')) {
-            return;
-          }
+        if (options.withCorrection) {
           stepGear8();
         }
 
-        function round(x) {
-          return Math.round(x * 1000) / 1000;
-        }
+        self.postMessage({type: 'result', options, solutions});
+      }
 
-        function round4(x) {
-          return Math.round(x * 10000) / 10000;
+      self.onmessage = (e) => {
+        calculate(e.data);
+      };
+    </script>
+    <script>
+      function setPitch(source) {
+        const tpi = document.getElementById('pitchTpiInput');
+        const inch = document.getElementById('pitchInchInput');
+        const mm = document.getElementById('pitchInput');
+        if (source == 'tpi' && Number(tpi.value)) {
+          inch.value = 1/Number(tpi.value);
+          mm.value = 25.4/Number(tpi.value);
+          return true;
         }
+        if (source == 'inch' && Number(inch.value)) {
+          tpi.value = 1/Number(inch.value);
+          mm.value = 25.4*Number(inch.value);
+          return true;
+        }
+        if (source == 'mm' && Number(mm.value)) {
+          tpi.value = 25.4/Number(mm.value);
+          inch.value = Number(mm.value)/25.4;
+          return true;
+        }
+        return false;
+      }
 
+      let worker;
+
+      function calculate(withCorrection) {
+        document.getElementById('solutions').innerHTML = 'Calculating! Please wait.<br><progress id="progressBar" value="0" max="100"></progress>';
+
+        if (worker) {
+          worker.terminate();
+        }
+        worker = new Worker(window.URL.createObjectURL(new Blob([
+          document.querySelector('#worker1').textContent
+        ], { type: "text/javascript" })));
+        worker.onmessage = (e) => {
+          const data = e.data;
+          console.log('received from worker', data);
+          if (data.type === 'progress') {
+            document.getElementById('progressBar').value = data.value;
+          } else if (data.type === 'result' && data.error) {
+            document.getElementById('solutions').innerText = data.error;
+          } else if (data.type === 'result' && data.solutions) {
+            showSolutions(data.options, data.solutions);
+          }
+        }
+        worker.postMessage({
+          withCorrection,
+          gearsInput: document.getElementById('gearsInput').value,
+          leadScrewPitchInput: Number(document.getElementById('leadScrewPitchInput').value),
+          pitchInput: Number(document.getElementById('pitchInput').value),
+          startInput: Number(document.getElementById('startInput').value),
+          coarseInput: document.getElementById('coarseInput').checked,
+        });
+      }
+
+      function round4(x) {
+        return Math.round(x * 10000) / 10000;
+      }
+
+      function showSolutions(options, solutions) {
         let solutionTexts = solutions.map(x => {
           let ratio = x.gears[0] / x.gears[1] * x.gears[2] / x.gears[3];
           if (x.gears.length === 8) {
             ratio = ratio * x.gears[4] / x.gears[5] * x.gears[6] / x.gears[7];
           }
           const out = round4(ratio) + ': ' + x.gears.join(' ');
-          if (Math.abs(x.pitch - pitch) >= 0.001) {
+          if (Math.abs(x.pitch - options.pitchInput) >= 0.001) {
             return '<span class="approx">' + out + '</span>';
           }
           return out;
         });
         document.getElementById('solutions').innerHTML =
-          '<h2>For ratio ' + round4(pitch / 25.4 * screwPitchInch) + ':</h2>' +
+          '<h2>For ratio ' + round4(options.pitchInput / 25.4 * options.leadScrewPitchInput) + ':</h2>' +
           '<div class="solutionsContent">' +
-          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
+          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' ) +
           '</div>';
-        // Wasn't requested for this particular lathe, let's keep it if needed at some point.
-        /* document.getElementById('allPitches').innerHTML =
-          '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
-          Array.from(pitches).sort((a, b) => a - b).join('<br>') + '</p>'; */
       }
     </script>
   </head>
@@ -247,7 +282,7 @@
       <label for="coarseInput">Coarse thread (divides ratio by 5)<label>
     </div>
     <input type="button" value="Calculate" onclick="calculate(false)">
-    <input type="button" value="Calculate with correction" onclick="calculate(true)"> 
+    <input type="button" value="Calculate with correction" onclick="calculate(true)">
     <p id="solutions"></p>
     <p id="allPitches"></p>
     <hr>

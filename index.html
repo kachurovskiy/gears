@@ -44,7 +44,7 @@
         const d1 = Math.abs((Math.max(8, g3+2) - Math.max(8, g2+2)) / 2) // depth of the middle axis
         // Axes are all 8mm except bottom one, it's 17mm on the right due to a bushing.
         const d2 = Math.abs((Math.max(8, g4+2) - Math.max(17, g5+2)) / 2) // depth of the bottom axis
-        
+
         // 5-gear.
         if (g1 && g2 && g3 && g4) {
           if (d0 >= d1) {
@@ -57,7 +57,7 @@
             return false;
           }
         }
-        
+
         // 4-gear through the top.
         if (g1 && g2 && !g3) {
           if (d0 >= d1) {
@@ -78,7 +78,7 @@
         if (g0/2 + space1 + space2 < 130) {
           return false;
         }
-        
+
         return true;
       }
 
@@ -215,7 +215,7 @@
           }
         }
         stepGear3Bottom();
-        
+
         function round(x) {
           return Math.round(x * 1000) / 1000;
         }
@@ -229,7 +229,7 @@
         document.getElementById('solutions').innerHTML =
           '<h2>Gear sets for pitch ' + pitch + '</h2>' +
           '<div class="solutionsContent">' +
-          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+ 
+          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+
           '</div>';
         document.getElementById('allPitches').innerHTML =
           '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
@@ -239,7 +239,8 @@
   </head>
   <body>
     <h1>Lathe gear calculator</h1>
-    <p>Designed for WM210 and WM180 lathe models<p>
+    <p>Designed for WM210 and WM180 lathe models.<p>
+    <p>Install <a href="https://kachurovskiy.com/">electronic lead screw</a> and you won't need the gears anymore.<p>
     <h2>Inputs</h2>
     <label for="gearsInput">Gears you have available:</label>
     <input type="text" id="gearsInput" value="20, 24, 30, 40, 40, 50, 60, 60, 70, 72, 80, 80" required>
@@ -249,7 +250,7 @@
     <input type="number" id="spindleGearInput" value="60" required>
     <label for="pitchInput">Pitch (mm):</label>
     <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
-    <input type="button" value="Calculate" onclick="calculate()"> 
+    <input type="button" value="Calculate" onclick="calculate()">
     <p id="solutions"></p>
     <p id="allPitches"></p>
     <h2>Possible gear configurations</h2>
@@ -365,11 +366,6 @@
           </g>
       </svg>
     </div>
-    <section class="post-full-comments">
-        <script src="https://utteranc.es/client.js" repo="kachurovskiy/k10y-comments"
-            issue-term="pathname" theme="github-light" crossorigin="anonymous" async>
-        </script>
-    </section>
     <hr>
     <p>If you have feedback, want to make an improvement or want to create a similar calculator for another lathe model, check out <a href="https://github.com/kachurovskiy/gears/blob/master/index.html">https://github.com/kachurovskiy/gears/blob/master/index.html</a>.</p>
   </body>

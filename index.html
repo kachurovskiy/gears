@@ -5,17 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Lathe gear calculator</title>
     <style>
+      html {
+        overflow-x: hidden;
+      }
       body {
-        font-family: Roboto;
+        font-family: Roboto, Arial, sans-serif;
         padding: 12px;
         margin: 0 auto;
         max-width: 600px;
+      }
+      * {
+        box-sizing: border-box;
       }
       input[type=text], input[type=number] {
         display: block;
         padding: 4px;
         margin: 4px 0;
-        width: 95%;
+        width: 100%;
       }
       #allPitchesContent {
         column-count: 6;
@@ -26,14 +32,131 @@
       .approx {
         color: gray;
       }
-      input[type=button] {
+      .resultNote {
+        color: #555;
+      }
+      .solutionButton {
+        color: inherit;
+        cursor: pointer;
+        display: block;
+        font: inherit;
+        margin: 0;
+        padding: 0;
+        text-align: left;
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      .solutionButton:hover,
+      .solutionButton:focus {
+        text-decoration: underline;
+      }
+      .solutionButton.selected {
+        font-weight: bold;
+      }
+      .pitchButton {
+        background: none;
+        border: 0;
+        color: inherit;
+        cursor: pointer;
+        display: block;
+        font: inherit;
+        margin: 0;
+        padding: 0;
+        text-align: left;
+      }
+      .pitchButton:hover,
+      .pitchButton:focus {
+        text-decoration: underline;
+      }
+      button[type=submit] {
         height: 3em;
         margin: 1em 0;
         width: 10em;
       }
+      #gearVisualizer {
+        background: #f6f6f3;
+        border: 0;
+        height: 100dvh;
+        margin: 0;
+        max-height: 100dvh;
+        max-width: 100vw;
+        padding: 0;
+        width: 100vw;
+      }
+      #gearVisualizer::backdrop {
+        background: rgba(0, 0, 0, 0.72);
+      }
+      .visualizerHeader {
+        align-items: center;
+        background: #f6f6f3;
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        min-height: 58px;
+        padding: 10px 14px;
+      }
+      #visualizerTitle {
+        font-size: 1rem;
+        line-height: 1.25;
+        margin: 0;
+      }
+      #visualizerClose {
+        background: #222;
+        border: 0;
+        color: white;
+        cursor: pointer;
+        font: inherit;
+        height: 36px;
+        width: 44px;
+      }
+      #gearSceneStatus {
+        bottom: 12px;
+        left: 14px;
+        margin: 0;
+        position: absolute;
+      }
+      #gearScene {
+        background: #f6f6f3;
+        height: calc(100dvh - 58px);
+        touch-action: none;
+        width: 100%;
+      }
+      #gearScene canvas {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
     </style>
     <script>
-      const accuracy = 0.0051;
+      const threeUrl = 'https://unpkg.com/three@0.159.0/build/three.min.js';
+      let renderedSolutions = [];
+      let threeLoadPromise;
+      let gearViewer = {
+        animationId: 0,
+        camera: null,
+        dragging: false,
+        gears: [],
+        lastX: 0,
+        lastY: 0,
+        orbit: null,
+        renderer: null,
+        root: null,
+        scene: null,
+        viewHeight: 150,
+      };
+
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('calculatorForm').addEventListener('submit', (event) => {
+          event.preventDefault();
+          calculate();
+        });
+        document.getElementById('solutions').addEventListener('click', handleSolutionClick);
+        document.getElementById('solutions').addEventListener('keydown', handleSolutionKeydown);
+        document.getElementById('allPitches').addEventListener('click', handlePitchClick);
+        document.getElementById('visualizerClose').addEventListener('click', hideGearVisualizer);
+        window.addEventListener('resize', resizeGearViewer);
+      });
+
       function willFit(g0, g1, g2, g3, g4, g5) {
         // Spindle gear is on the left, must be able to reach it.
         if (g0 <= g1) {
@@ -83,28 +206,29 @@
       }
 
       function calculate() {
-        document.getElementById('solutions').value = '';
+        document.getElementById('solutions').innerHTML = '';
+        document.getElementById('allPitches').innerHTML = '';
+        renderedSolutions = [];
+        hideGearVisualizer();
 
-        let allGears = [];
-        document.getElementById('gearsInput').value.split(',').forEach(el => {
-          let num = Number(el.trim());
-          if (num) {
-            allGears.push(num);
-          }
-        });
+        let allGears = parseGears(document.getElementById('gearsInput').value);
+        if (!allGears) {
+          alert('Please use whole tooth counts separated by commas, spaces, semicolons, or line breaks.');
+          return;
+        }
         if (!allGears.length) {
           alert('Please specify all the gears you have e.g. "20, 20, 24, ..."');
           return;
         }
 
         let screwPitch = Number(document.getElementById('leadScrewPitchInput').value);
-        if (!screwPitch || screwPitch < 0 || screwPitch > 10) {
+        if (!screwPitch || screwPitch <= 0 || screwPitch > 10) {
           alert('Please enter a reasonable lead screw pitch e.g. "2" for 2mm');
           return;
         }
 
         let spindleGear =  Number(document.getElementById('spindleGearInput').value);
-        if (!spindleGear || spindleGear < 1 || screwPitch > 100) {
+        if (!spindleGear || !Number.isInteger(spindleGear) || spindleGear < 1 || spindleGear > 100) {
           alert('Please enter a reasonable spindle gear e.g. "60" for 60 teeth');
           return;
         }
@@ -112,6 +236,12 @@
         let pitch =  Number(document.getElementById('pitchInput').value);
         if (!pitch || pitch <= 0 || pitch > 100) {
           alert('Please enter a reasonable pitch e.g. "0.7" for 0.7mm');
+          return;
+        }
+
+        let tolerance =  Number(document.getElementById('toleranceInput').value);
+        if (!tolerance || tolerance <= 0 || tolerance > 1) {
+          alert('Please enter a reasonable tolerance e.g. "0.005" for +/- 0.005mm');
           return;
         }
 
@@ -126,8 +256,8 @@
             if (willFit(gears[0], gears[1], gears[2], gears[3], gears[4], 0)) {
               let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[1] / gears[2] * gears[3] / gears[4]);
               pitches.add(Math.round(cutterPitch * 1000) / 1000);
-              if (Math.abs(cutterPitch - pitch) < accuracy) {
-                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+              if (withinTolerance(cutterPitch, pitch, tolerance)) {
+                solutions.push({pitch: cutterPitch, gears: gears.concat(), layout: '5'});
               }
             }
           } else {
@@ -150,8 +280,8 @@
             if (willFit(gears[0], gears[1], gears[2], 0, 0, gears[3])) {
               let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[1] / gears[2] * gears[2] / gears[3]);
               pitches.add(cutterPitch);
-              if (Math.abs(cutterPitch - pitch) < accuracy) {
-                solutions.push({pitch: cutterPitch, gears: gears.join(' ') + ' top'});
+              if (withinTolerance(cutterPitch, pitch, tolerance)) {
+                solutions.push({pitch: cutterPitch, gears: gears.concat(), layout: '4-top'});
               }
             }
           } else {
@@ -174,8 +304,8 @@
             if (willFit(gears[0], 0, gears[2], gears[1], 0, gears[3])) {
               let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[0] / gears[1] * gears[2] / gears[3]);
               pitches.add(cutterPitch);
-              if (Math.abs(cutterPitch - pitch) < accuracy) {
-                solutions.push({pitch: cutterPitch, gears: gears.join(' ') + ' bottom'});
+              if (withinTolerance(cutterPitch, pitch, tolerance)) {
+                solutions.push({pitch: cutterPitch, gears: gears.concat(), layout: '4-bottom'});
               }
             }
           } else {
@@ -198,8 +328,8 @@
             if (willFit(gears[0], 0, 0, gears[1], gears[2], 0)) {
               let cutterPitch = round(screwPitch * spindleGear / gears[0] * gears[0] / gears[1] * gears[1] / gears[2]);
               pitches.add(cutterPitch);
-              if (Math.abs(cutterPitch - pitch) < accuracy) {
-                solutions.push({pitch: cutterPitch, gears: gears.join(' ')});
+              if (withinTolerance(cutterPitch, pitch, tolerance)) {
+                solutions.push({pitch: cutterPitch, gears: gears.concat(), layout: '3'});
               }
             }
           } else {
@@ -220,39 +350,848 @@
           return Math.round(x * 1000) / 1000;
         }
 
-        let solutionTexts = solutions.map(x => {
-          if (x.pitch != pitch) {
-            return '<span class="approx">' + String(x.pitch) + ': ' + x.gears + '</span>';
+        let uniqueSolutions = Array.from(new Map(
+          solutions.map(x => [String(x.pitch) + ':' + x.layout + ':' + x.gears.join(' '), x])
+        ).values());
+        uniqueSolutions.sort((a, b) => {
+          const error = Math.abs(a.pitch - pitch) - Math.abs(b.pitch - pitch);
+          if (error) {
+            return error;
           }
-          return String(x.pitch) + ': ' + x.gears;
+          return formatGearSet(a).localeCompare(formatGearSet(b));
         });
+        renderedSolutions = uniqueSolutions;
+
+        let solutionTexts = uniqueSolutions.map((x, index) => renderSolutionButton(x, index, pitch));
+        const closestText = renderClosestPitches(pitches, pitch);
         document.getElementById('solutions').innerHTML =
-          '<h2>Gear sets for pitch ' + pitch + '</h2>' +
+          '<h2>Gear sets for pitch ' + formatPitch(pitch) + '</h2>' +
           '<div class="solutionsContent">' +
-          (solutionTexts.length ? [...new Set(solutionTexts)].sort().join('<br>') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.' )+
-          '</div>';
+          (solutionTexts.length ? solutionTexts.join('') : 'Doesn\'t seem possible with the gears you have.<br>Try adding more gears or picking a slightly different pitch.') +
+          '</div>' +
+          (solutionTexts.length ? '<p class="resultNote">"top" and "bottom" describe the 4-gear path. Gray rows are within tolerance but not exact.</p>' : closestText);
+        const pitchButtons = Array.from(pitches).sort((a, b) => a - b).map(renderPitchButton).join('');
         document.getElementById('allPitches').innerHTML =
-          '<h2>All possible pitches with your gears</h2><p id="allPitchesContent">' +
-          Array.from(pitches).sort((a, b) => a - b).join('<br>') + '</p>';
+          '<h2>All possible pitches with your gears</h2><div id="allPitchesContent">' +
+          (pitches.size ? pitchButtons : 'No possible pitches found with this gear set.') + '</div>';
+      }
+
+      function formatGearSet(solution) {
+        const suffix = solution.layout === '4-top' ? ' top' : solution.layout === '4-bottom' ? ' bottom' : '';
+        return solution.gears.join(' ') + suffix;
+      }
+
+      function formatSolutionText(solution, target) {
+        return formatPitch(solution.pitch) + formatError(solution.pitch, target) + ': ' + formatGearSet(solution);
+      }
+
+      function formatSolutionRow(solution, target) {
+        const error = formatError(solution.pitch, target);
+        return (error ? error + ': ' : '') + formatGearSet(solution);
+      }
+
+      function renderSolutionButton(solution, index, target) {
+        const classes = ['solutionButton'];
+        if (Math.abs(solution.pitch - target) >= 0.0005) {
+          classes.push('approx');
+        }
+        return '<div role="button" tabindex="0" class="' + classes.join(' ') + '" data-solution-index="' + index + '" title="Drag to select/copy. Click to show 3D arrangement">' +
+          escapeHtml(formatSolutionRow(solution, target)) +
+          '</div>';
+      }
+
+      function renderPitchButton(pitch) {
+        const value = formatPitch(pitch);
+        return '<button type="button" class="pitchButton" data-pitch="' + escapeHtml(value) + '">' +
+          escapeHtml(value) +
+          '</button>';
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function handleSolutionClick(event) {
+        const button = event.target.closest('.solutionButton');
+        if (!button) {
+          return;
+        }
+        if (hasSelectedTextInside(button)) {
+          return;
+        }
+
+        showSolutionForButton(button);
+      }
+
+      function handleSolutionKeydown(event) {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+
+        const button = event.target.closest('.solutionButton');
+        if (!button) {
+          return;
+        }
+
+        event.preventDefault();
+        showSolutionForButton(button);
+      }
+
+      function showSolutionForButton(button) {
+        const solution = renderedSolutions[Number(button.dataset.solutionIndex)];
+        if (!solution) {
+          return;
+        }
+
+        document.querySelectorAll('.solutionButton.selected').forEach(el => {
+          el.classList.remove('selected');
+        });
+        button.classList.add('selected');
+        showGearVisualizer(solution);
+      }
+
+      function hasSelectedTextInside(element) {
+        if (!window.getSelection) {
+          return false;
+        }
+
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !String(selection).trim()) {
+          return false;
+        }
+
+        for (let i = 0; i < selection.rangeCount; i++) {
+          const container = selection.getRangeAt(i).commonAncestorContainer;
+          const node = container.nodeType === 1 ? container : container.parentElement;
+          if (node && element.contains(node)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function handlePitchClick(event) {
+        const button = event.target.closest('.pitchButton');
+        if (!button) {
+          return;
+        }
+
+        document.getElementById('pitchInput').value = button.dataset.pitch;
+        calculate();
+      }
+
+      function hideGearVisualizer() {
+        const visualizer = document.getElementById('gearVisualizer');
+        if (visualizer && visualizer.open) {
+          visualizer.close();
+        }
+      }
+
+      function showGearVisualizer(solution) {
+        const visualizer = document.getElementById('gearVisualizer');
+        const status = document.getElementById('gearSceneStatus');
+        const target = Number(document.getElementById('pitchInput').value);
+
+        if (!visualizer.open) {
+          visualizer.showModal();
+        }
+        document.getElementById('visualizerTitle').innerText = '3D arrangement: ' + formatSolutionText(solution, target);
+        status.innerText = 'Loading 3D visualization...';
+
+        return loadThree()
+          .then(() => {
+            initGearViewer();
+            renderGearTrain(solution);
+            status.innerText = '';
+          })
+          .catch(() => {
+            status.innerText = '3D visualization could not load.';
+          });
+      }
+
+      function loadThree() {
+        if (window.THREE) {
+          return Promise.resolve();
+        }
+        if (threeLoadPromise) {
+          return threeLoadPromise;
+        }
+
+        threeLoadPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = threeUrl;
+          script.async = true;
+          script.onload = () => window.THREE ? resolve() : reject(new Error('Three.js did not initialize'));
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        return threeLoadPromise;
+      }
+
+      function initGearViewer() {
+        if (gearViewer.renderer) {
+          resizeGearViewer();
+          return;
+        }
+
+        const THREE = window.THREE;
+        const mount = document.getElementById('gearScene');
+
+        gearViewer.scene = new THREE.Scene();
+        gearViewer.camera = new THREE.OrthographicCamera(-75, 75, 75, -75, 1, 1000);
+        gearViewer.camera.position.set(0, -240, 0);
+        gearViewer.camera.up.set(0, 0, 1);
+        gearViewer.camera.lookAt(0, 0, 0);
+
+        gearViewer.renderer = new THREE.WebGLRenderer({antialias: true, preserveDrawingBuffer: true});
+        gearViewer.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        gearViewer.renderer.setClearColor(0xf6f6f3, 1);
+        mount.appendChild(gearViewer.renderer.domElement);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xb8b1a5, 1.7);
+        gearViewer.scene.add(hemiLight);
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+        keyLight.position.set(80, -120, 180);
+        gearViewer.scene.add(keyLight);
+
+        gearViewer.orbit = new THREE.Group();
+        gearViewer.orbit.rotation.x = -0.18;
+        gearViewer.orbit.rotation.z = -0.08;
+        gearViewer.root = new THREE.Group();
+        gearViewer.orbit.add(gearViewer.root);
+        gearViewer.scene.add(gearViewer.orbit);
+
+        attachGearViewerControls(gearViewer.renderer.domElement);
+        resizeGearViewer();
+        animateGearViewer();
+      }
+
+      function attachGearViewerControls(canvas) {
+        canvas.addEventListener('pointerdown', event => {
+          gearViewer.dragging = true;
+          gearViewer.lastX = event.clientX;
+          gearViewer.lastY = event.clientY;
+          canvas.setPointerCapture(event.pointerId);
+        });
+        canvas.addEventListener('pointermove', event => {
+          if (!gearViewer.dragging) {
+            return;
+          }
+          const dx = event.clientX - gearViewer.lastX;
+          const dy = event.clientY - gearViewer.lastY;
+          gearViewer.lastX = event.clientX;
+          gearViewer.lastY = event.clientY;
+          gearViewer.orbit.rotation.z += dx * 0.006;
+          gearViewer.orbit.rotation.x = clamp(gearViewer.orbit.rotation.x + dy * 0.004, -1.1, 0.6);
+        });
+        canvas.addEventListener('pointerup', event => {
+          gearViewer.dragging = false;
+          if (canvas.hasPointerCapture && canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+          }
+        });
+        canvas.addEventListener('pointercancel', () => {
+          gearViewer.dragging = false;
+        });
+        canvas.addEventListener('wheel', event => {
+          event.preventDefault();
+          const scale = event.deltaY > 0 ? 0.92 : 1.08;
+          gearViewer.camera.zoom = clamp(gearViewer.camera.zoom * scale, 0.45, 3.5);
+          gearViewer.camera.updateProjectionMatrix();
+        }, {passive: false});
+      }
+
+      function animateGearViewer() {
+        gearViewer.animationId = requestAnimationFrame(animateGearViewer);
+        if (!document.getElementById('gearVisualizer').open) {
+          return;
+        }
+        gearViewer.gears.forEach(gear => {
+          gear.rotation.y += gear.userData.speed * 0.006;
+        });
+        gearViewer.renderer.render(gearViewer.scene, gearViewer.camera);
+      }
+
+      function resizeGearViewer() {
+        if (!gearViewer.renderer) {
+          return;
+        }
+
+        const mount = document.getElementById('gearScene');
+        const width = mount.clientWidth || 600;
+        const height = mount.clientHeight || 360;
+        const aspect = width / height;
+        const viewHeight = gearViewer.viewHeight || 150;
+        gearViewer.renderer.setSize(width, height, false);
+        gearViewer.camera.left = -viewHeight * aspect / 2;
+        gearViewer.camera.right = viewHeight * aspect / 2;
+        gearViewer.camera.top = viewHeight / 2;
+        gearViewer.camera.bottom = -viewHeight / 2;
+        gearViewer.camera.updateProjectionMatrix();
+      }
+
+      function renderGearTrain(solution) {
+        const THREE = window.THREE;
+        clearGroup(gearViewer.root);
+        gearViewer.gears = [];
+
+        const chain = buildGearChain(solution);
+        const shaftRanges = new Map();
+
+        chain.forEach(item => {
+          if (!shaftRanges.has(item.shaft)) {
+            shaftRanges.set(item.shaft, {x: item.x, z: item.z, minY: item.y, maxY: item.y});
+          }
+          const range = shaftRanges.get(item.shaft);
+          range.minY = Math.min(range.minY, item.y);
+          range.maxY = Math.max(range.maxY, item.y);
+        });
+
+        shaftRanges.forEach((range, shaft) => {
+          if (shaft === 'spindle') {
+            return;
+          }
+          const length = Math.max(28, range.maxY - range.minY + 32);
+          const rod = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.2, 1.2, length, 16),
+            new THREE.MeshStandardMaterial({color: 0x3b3b3b, roughness: 0.55})
+          );
+          rod.position.set(range.x, (range.minY + range.maxY) / 2, range.z);
+          gearViewer.root.add(rod);
+        });
+
+        chain.forEach(item => {
+          const gear = createGearMesh(item);
+          gear.position.set(item.x, item.y, item.z);
+          gearViewer.root.add(gear);
+        });
+        fitGearCamera(chain);
+      }
+
+      function fitGearCamera(chain) {
+        const mount = document.getElementById('gearScene');
+        const width = mount.clientWidth || 600;
+        const height = mount.clientHeight || 360;
+        const aspect = width / height;
+        const minX = Math.min(...chain.map(item => item.x - gearOuterRadius(item.teeth) - 8));
+        const maxX = Math.max(...chain.map(item => item.x + gearOuterRadius(item.teeth) + 8));
+        const minZ = Math.min(...chain.map(item => item.z - gearOuterRadius(item.teeth) - 10));
+        const maxZ = Math.max(...chain.map(item => item.z + gearOuterRadius(item.teeth) + 24));
+        const centerX = (minX + maxX) / 2;
+        const centerZ = (minZ + maxZ) / 2;
+        const paddedWidth = maxX - minX;
+        const paddedHeight = maxZ - minZ;
+
+        gearViewer.viewHeight = Math.max(58, paddedHeight, paddedWidth / aspect);
+        gearViewer.camera.position.set(centerX, -240, centerZ);
+        gearViewer.camera.zoom = 1;
+        gearViewer.camera.lookAt(centerX, 0, centerZ);
+        resizeGearViewer();
+      }
+
+      function buildGearChain(solution) {
+        const spindleGear = Number(document.getElementById('spindleGearInput').value);
+        const gears = solution.gears;
+        const chain = [{teeth: spindleGear, label: 'spindle ' + spindleGear + 'T', shaft: 'spindle', plane: 0, color: 0x707070}];
+
+        if (solution.layout === '5') {
+          // Five-gear trains use two side planes: gears 1/4/5 inside, gears 2/3 outside.
+          chain.push(
+            gearItem(gears[0], 1, 'upper', 0, 0x2f6fb0),
+            gearItem(gears[1], 2, 'upper', 22, 0xc27b2c),
+            gearItem(gears[2], 3, 'middle', 22, 0x2f8d61),
+            gearItem(gears[3], 4, 'middle', 0, 0xc27b2c),
+            gearItem(gears[4], 5, 'lead', 0, 0x2f6fb0)
+          );
+        } else if (solution.layout === '4-top') {
+          chain.push(
+            gearItem(gears[0], 1, 'upper', 0, 0x2f6fb0),
+            gearItem(gears[1], 2, 'upper', 22, 0xc27b2c),
+            gearItem(gears[2], 3, 'middle', 22, 0x2f8d61),
+            gearItem(gears[3], 4, 'lead', 22, 0x2f6fb0)
+          );
+        } else if (solution.layout === '4-bottom') {
+          chain.push(
+            gearItem(gears[0], 1, 'upper', 0, 0x2f6fb0),
+            gearItem(gears[1], 2, 'middle', 0, 0x2f8d61),
+            gearItem(gears[2], 3, 'middle', 22, 0xc27b2c),
+            gearItem(gears[3], 4, 'lead', 22, 0x2f6fb0)
+          );
+        } else {
+          chain.push(
+            gearItem(gears[0], 1, 'upper', 0, 0x2f6fb0),
+            gearItem(gears[1], 2, 'middle', 0, 0x2f8d61),
+            gearItem(gears[2], 3, 'lead', 0, 0x2f6fb0)
+          );
+        }
+
+        positionGearChain(chain);
+        return chain;
+      }
+
+      function gearItem(teeth, index, shaft, plane, color) {
+        return {teeth, label: 'g' + index + ' ' + teeth + 'T', shaft, plane, color};
+      }
+
+      function positionGearChain(chain) {
+        const shaftPositions = buildShaftPositions(chain);
+        chain.forEach(item => {
+          const position = shaftPositions[item.shaft];
+          item.x = position.x;
+          item.y = item.plane;
+          item.z = position.z;
+        });
+        chain[0].speed = 1;
+        for (let i = 1; i < chain.length; i++) {
+          const previous = chain[i - 1];
+          const current = chain[i];
+          current.speed = current.shaft === previous.shaft
+            ? previous.speed
+            : -previous.speed * previous.teeth / current.teeth;
+        }
+
+        const minX = Math.min(...chain.map(item => item.x - gearRadius(item.teeth)));
+        const maxX = Math.max(...chain.map(item => item.x + gearRadius(item.teeth)));
+        const minY = Math.min(...chain.map(item => item.y));
+        const maxY = Math.max(...chain.map(item => item.y));
+        const minZ = Math.min(...chain.map(item => item.z - gearRadius(item.teeth)));
+        const maxZ = Math.max(...chain.map(item => item.z + gearRadius(item.teeth)));
+        const shiftX = -(minX + maxX) / 2;
+        const shiftY = -(minY + maxY) / 2;
+        const shiftZ = -(minZ + maxZ) / 2;
+        chain.forEach(item => {
+          item.x += shiftX;
+          item.y += shiftY;
+          item.z += shiftZ;
+        });
+        alignGearTeeth(chain);
+      }
+
+      function buildShaftPositions(chain) {
+        const positions = {};
+        const slotX = 0;
+        const slotShafts = ['lead', 'middle', 'upper'];
+
+        if (chain.some(item => item.shaft === 'lead')) {
+          positions.lead = {x: slotX, z: 0};
+        }
+        if (chain.some(item => item.shaft === 'middle')) {
+          const base = positions.lead || {x: slotX, z: 0};
+          positions.middle = {x: slotX, z: base.z + meshingDistanceBetween(chain, 'middle', 'lead')};
+        }
+        if (chain.some(item => item.shaft === 'upper')) {
+          const nextShaft = positions.middle ? 'middle' : 'lead';
+          const base = positions[nextShaft] || {x: slotX, z: 0};
+          positions.upper = {x: slotX, z: base.z + meshingDistanceBetween(chain, 'upper', nextShaft)};
+        }
+
+        const spindleMesh = findShaftMesh(chain, 'spindle');
+        if (spindleMesh) {
+          const target = spindleMesh.a.shaft === 'spindle' ? spindleMesh.b : spindleMesh.a;
+          const targetPosition = positions[target.shaft] || {x: slotX, z: 0};
+          const distance = meshingCenterDistance(spindleMesh.a, spindleMesh.b);
+          const offset = Math.min(22, distance * 0.42);
+          positions.spindle = {
+            x: targetPosition.x - offset,
+            z: targetPosition.z + Math.sqrt(Math.max(1, distance * distance - offset * offset)),
+          };
+        }
+
+        slotShafts.forEach(shaft => {
+          if (positions[shaft]) {
+            positions[shaft].x = slotX;
+          }
+        });
+        return positions;
+      }
+
+      function meshingDistanceBetween(chain, shaftA, shaftB) {
+        const mesh = findShaftMesh(chain, shaftA, shaftB);
+        if (mesh) {
+          return meshingCenterDistance(mesh.a, mesh.b);
+        }
+        const gearA = chain.find(item => item.shaft === shaftA);
+        const gearB = chain.find(item => item.shaft === shaftB);
+        if (gearA && gearB) {
+          return meshingCenterDistance(gearA, gearB);
+        }
+        return 36;
+      }
+
+      function findShaftMesh(chain, shaftA, shaftB) {
+        for (let i = 1; i < chain.length; i++) {
+          const a = chain[i - 1];
+          const b = chain[i];
+          if (a.shaft === b.shaft) {
+            continue;
+          }
+          if (!shaftB && (a.shaft === shaftA || b.shaft === shaftA)) {
+            return {a, b};
+          }
+          if ((a.shaft === shaftA && b.shaft === shaftB) || (a.shaft === shaftB && b.shaft === shaftA)) {
+            return {a, b};
+          }
+        }
+        return null;
+      }
+
+      function meshingCenterDistance(a, b) {
+        return gearRadius(a.teeth) + gearRadius(b.teeth) + 0.7;
+      }
+
+      function alignGearTeeth(chain) {
+        chain.forEach(item => {
+          item.phase = 0;
+        });
+        for (let i = 1; i < chain.length; i++) {
+          const previous = chain[i - 1];
+          const current = chain[i];
+          if (current.shaft === previous.shaft) {
+            continue;
+          }
+          const contactAngle = Math.atan2(current.z - previous.z, current.x - previous.x);
+          previous.phase = contactAngle - toothAngle(previous.teeth) / 2;
+          current.phase = contactAngle + Math.PI;
+        }
+      }
+
+      function toothAngle(teeth) {
+        return Math.PI * 2 / Math.min(Math.max(Math.round(teeth), 10), 128);
+      }
+
+      function createGearMesh(item) {
+        const THREE = window.THREE;
+        const radius = gearRadius(item.teeth);
+        const depth = 8;
+        const isSpindle = item.shaft === 'spindle';
+        const group = new THREE.Group();
+        const spin = new THREE.Group();
+        spin.userData.speed = item.speed;
+        spin.rotation.y = item.phase || 0;
+
+        const material = new THREE.MeshStandardMaterial({
+          color: item.color,
+          metalness: 0.18,
+          roughness: 0.42,
+        });
+        const body = new THREE.Mesh(createSpurGearGeometry(item.teeth, radius, depth), material);
+        spin.add(body);
+
+        if (!isSpindle) {
+          const hub = new THREE.Mesh(
+            new THREE.CylinderGeometry(Math.max(3.8, radius * 0.2), Math.max(3.8, radius * 0.2), depth + 1.6, 32),
+            new THREE.MeshStandardMaterial({color: 0x2f2f2f, roughness: 0.5})
+          );
+          spin.add(hub);
+          const centerCap = new THREE.Mesh(
+            new THREE.CylinderGeometry(Math.max(1.3, radius * 0.07), Math.max(1.3, radius * 0.07), depth + 2, 24),
+            new THREE.MeshStandardMaterial({color: 0x121212, roughness: 0.65})
+          );
+          spin.add(centerCap);
+        }
+        const markerHole = new THREE.Mesh(
+          new THREE.CylinderGeometry(clamp(radius * 0.085, 1.4, 3.2), clamp(radius * 0.085, 1.4, 3.2), depth + 2.4, 24),
+          new THREE.MeshStandardMaterial({color: 0x080808, roughness: 0.72})
+        );
+        markerHole.position.set(radius * 0.62, 0, 0);
+        spin.add(markerHole);
+        group.add(spin);
+        gearViewer.gears.push(spin);
+
+        if (!isSpindle) {
+          const label = createToothCountPlate(item.teeth, radius, depth);
+          label.position.set(0, -depth / 2 - 0.14, radius * 0.42);
+          group.add(label);
+        }
+
+        return group;
+      }
+
+      function createSpurGearGeometry(teeth, pitchRadius, depth) {
+        const THREE = window.THREE;
+        const toothCount = Math.min(Math.max(Math.round(teeth), 10), 128);
+        const visualModule = Math.max(2 * pitchRadius / toothCount, pitchRadius * 0.035);
+        const addendum = visualModule * 1.0;
+        const dedendum = visualModule * 1.2;
+        const pressureAngle = 20 * Math.PI / 180;
+        const rootRadius = Math.max(4.5, pitchRadius - dedendum);
+        const outerRadius = pitchRadius + addendum;
+        const baseRadius = Math.max(rootRadius * 0.92, pitchRadius * Math.cos(pressureAngle));
+        const flankStartRadius = Math.max(rootRadius + visualModule * 0.28, baseRadius);
+        const markerRadius = clamp(pitchRadius * 0.085, 1.4, 3.2);
+        const step = Math.PI * 2 / toothCount;
+        const halfPitchTooth = step / 4;
+        const pitchInvolute = involuteRollAngle(pitchRadius, baseRadius);
+        const shape = new THREE.Shape();
+        let started = false;
+
+        function addPoint(point) {
+          if (!started) {
+            shape.moveTo(point.x, point.y);
+            started = true;
+          } else {
+            shape.lineTo(point.x, point.y);
+          }
+        }
+
+        function addPolar(radius, angle) {
+          addPoint(polarPoint(radius, angle));
+        }
+
+        function addArc(radius, startAngle, endAngle, segments) {
+          for (let i = 1; i <= segments; i++) {
+            const angle = startAngle + (endAngle - startAngle) * i / segments;
+            addPolar(radius, angle);
+          }
+        }
+
+        function halfToothAngle(radius) {
+          const rollAngle = involuteRollAngle(radius, baseRadius);
+          return Math.max(step * 0.035, halfPitchTooth + pitchInvolute - rollAngle);
+        }
+
+        for (let i = 0; i < toothCount; i++) {
+          const base = i * step;
+          const center = base + step / 2;
+          const valleyStart = base;
+          const valleyEnd = base + step;
+          const leftStartAngle = center - halfToothAngle(flankStartRadius);
+          const leftOuterAngle = center - halfToothAngle(outerRadius);
+          const rightOuterAngle = center + halfToothAngle(outerRadius);
+          const rightStartAngle = center + halfToothAngle(flankStartRadius);
+
+          addPolar(rootRadius, valleyStart);
+          addArc(rootRadius, valleyStart, leftStartAngle - step * 0.03, 3);
+          addPolar(rootRadius + (flankStartRadius - rootRadius) * 0.35, leftStartAngle - step * 0.018);
+          addPolar(flankStartRadius, leftStartAngle);
+
+          for (let j = 1; j <= 5; j++) {
+            const radius = flankStartRadius + (outerRadius - flankStartRadius) * j / 5;
+            addPolar(radius, center - halfToothAngle(radius));
+          }
+
+          addArc(outerRadius, leftOuterAngle, rightOuterAngle, 3);
+
+          for (let j = 4; j >= 0; j--) {
+            const radius = flankStartRadius + (outerRadius - flankStartRadius) * j / 5;
+            addPolar(radius, center + halfToothAngle(radius));
+          }
+
+          addPolar(rootRadius + (flankStartRadius - rootRadius) * 0.35, rightStartAngle + step * 0.018);
+          addArc(rootRadius, rightStartAngle + step * 0.03, valleyEnd, 3);
+        }
+        shape.closePath();
+
+        const markerHole = new THREE.Path();
+        markerHole.absarc(pitchRadius * 0.62, 0, markerRadius, 0, Math.PI * 2, true);
+        shape.holes.push(markerHole);
+
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+          depth,
+          bevelEnabled: true,
+          bevelSegments: 1,
+          bevelSize: 0.35,
+          bevelThickness: 0.5,
+          curveSegments: 1,
+          steps: 1,
+        });
+        geometry.rotateX(Math.PI / 2);
+        geometry.center();
+        return geometry;
+      }
+
+      function polarPoint(radius, angle) {
+        return {
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+        };
+      }
+
+      function involuteRollAngle(radius, baseRadius) {
+        if (radius <= baseRadius) {
+          return 0;
+        }
+        const pressureAngle = Math.acos(clamp(baseRadius / radius, -1, 1));
+        return Math.tan(pressureAngle) - pressureAngle;
+      }
+
+      function createToothCountPlate(teeth, radius, depth) {
+        const THREE = window.THREE;
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 128;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = 'rgba(246, 246, 243, 0.82)';
+        roundRect(context, 18, 24, 220, 80, 12);
+        context.fill();
+        context.strokeStyle = 'rgba(30, 30, 30, 0.28)';
+        context.lineWidth = 5;
+        context.stroke();
+        context.fillStyle = '#151515';
+        context.font = 'bold 52px Arial, sans-serif';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(teeth + 'T', canvas.width / 2, canvas.height / 2 + 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          depthTest: true,
+          depthWrite: false,
+        });
+        const width = clamp(radius * 0.92, 10, 24);
+        const height = clamp(radius * 0.38, 4.8, 9);
+        const plate = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+        plate.rotation.x = Math.PI / 2;
+        return plate;
+      }
+
+      function roundRect(context, x, y, width, height, radius) {
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.lineTo(x + width - radius, y);
+        context.quadraticCurveTo(x + width, y, x + width, y + radius);
+        context.lineTo(x + width, y + height - radius);
+        context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        context.lineTo(x + radius, y + height);
+        context.quadraticCurveTo(x, y + height, x, y + height - radius);
+        context.lineTo(x, y + radius);
+        context.quadraticCurveTo(x, y, x + radius, y);
+        context.closePath();
+      }
+
+      function clearGroup(group) {
+        while (group.children.length) {
+          const child = group.children[0];
+          group.remove(child);
+          disposeObject(child);
+        }
+      }
+
+      function disposeObject(object) {
+        object.traverse(child => {
+          if (child.geometry) {
+            child.geometry.dispose();
+          }
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(disposeMaterial);
+            } else {
+              disposeMaterial(child.material);
+            }
+          }
+        });
+      }
+
+      function disposeMaterial(material) {
+        if (material.map) {
+          material.map.dispose();
+        }
+        material.dispose();
+      }
+
+      function gearRadius(teeth) {
+        return Math.min(42, Math.max(8, teeth * 0.32));
+      }
+
+      function gearOuterRadius(teeth) {
+        const pitchRadius = gearRadius(teeth);
+        const toothCount = Math.min(Math.max(Math.round(teeth), 10), 128);
+        const visualModule = Math.max(2 * pitchRadius / toothCount, pitchRadius * 0.035);
+        return pitchRadius + visualModule;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function parseGears(value) {
+        const parts = value
+          .split(/[\s,;]+/)
+          .map(el => el.trim())
+          .filter(Boolean);
+        if (parts.some(el => !/^\d+$/.test(el))) {
+          return null;
+        }
+        return parts
+          .map(Number)
+          .filter(num => num > 0);
+      }
+
+      function withinTolerance(value, target, tolerance) {
+        return Math.abs(value - target) <= tolerance + 1e-9;
+      }
+
+      function formatPitch(value) {
+        return String(Number(value.toFixed(3)));
+      }
+
+      function formatPercent(value) {
+        return String(Number(value.toFixed(2)));
+      }
+
+      function formatError(value, target) {
+        const error = Number((value - target).toFixed(3));
+        if (!error) {
+          return '';
+        }
+        const sign = error > 0 ? '+' : '';
+        return ' (' + sign + formatPitch(error) + 'mm, ' + formatPercent(Math.abs(error / target * 100)) + '%)';
+      }
+
+      function renderClosestPitches(pitches, target) {
+        const closest = Array.from(pitches)
+          .map(value => ({
+            value,
+            error: Math.abs(value - target),
+          }))
+          .sort((a, b) => a.error - b.error || a.value - b.value)
+          .slice(0, 10);
+        if (!closest.length) {
+          return '';
+        }
+
+        return '<h3>Closest possible pitches</h3><div class="solutionsContent">' +
+          closest.map(x => '<span class="approx">' + formatPitch(x.value) + formatError(x.value, target) + '</span>').join('<br>') +
+          '</div>';
       }
     </script>
   </head>
   <body>
     <h1>Lathe gear calculator</h1>
-    <p>Designed for WM210 and WM180 lathe models.<p>
-    <p>Install <a href="https://kachurovskiy.com/">electronic lead screw</a> and you won't need the gears anymore.<p>
+    <p>Designed for WM210 and WM180 lathe models.</p>
+    <p>Install <a href="https://kachurovskiy.com/">electronic lead screw</a> and you won't need the gears anymore.</p>
     <h2>Inputs</h2>
-    <label for="gearsInput">Gears you have available:</label>
-    <input type="text" id="gearsInput" value="20, 24, 30, 40, 40, 50, 60, 60, 70, 72, 80, 80" required>
-    <label for="leadScrewPitchInput">Lead screw pitch (mm):</label>
-    <input type="number" id="leadScrewPitchInput" value="2" required>
-    <label for="spindleGearInput">Number of teeth on the spindle gear:</label>
-    <input type="number" id="spindleGearInput" value="60" required>
-    <label for="pitchInput">Pitch (mm):</label>
-    <input type="number" id="pitchInput" value="" required onsubmit="calculate()" onkeypress="event.key == 'Enter' && calculate()">
-    <input type="button" value="Calculate" onclick="calculate()">
-    <p id="solutions"></p>
-    <p id="allPitches"></p>
+    <form id="calculatorForm">
+      <label for="gearsInput">Gears you have available:</label>
+      <input type="text" id="gearsInput" value="20, 24, 30, 40, 40, 50, 60, 60, 70, 72, 80, 80" required>
+      <label for="leadScrewPitchInput">Lead screw pitch (mm):</label>
+      <input type="number" id="leadScrewPitchInput" value="2" min="0.001" max="10" step="any" required>
+      <label for="spindleGearInput">Number of teeth on the spindle gear:</label>
+      <input type="number" id="spindleGearInput" value="60" min="1" max="100" step="1" required>
+      <label for="pitchInput">Pitch (mm):</label>
+      <input type="number" id="pitchInput" value="" min="0.001" max="100" step="any" required>
+      <label for="toleranceInput">Tolerance (+/- mm):</label>
+      <input type="number" id="toleranceInput" value="0.005" min="0.001" max="1" step="any" required>
+      <button type="submit">Calculate</button>
+    </form>
+    <section id="solutions" aria-live="polite"></section>
+    <dialog id="gearVisualizer">
+      <div class="visualizerHeader">
+        <h2 id="visualizerTitle">3D arrangement</h2>
+        <button type="button" id="visualizerClose" aria-label="Close 3D arrangement">X</button>
+      </div>
+      <div id="gearScene"></div>
+      <p id="gearSceneStatus"></p>
+    </dialog>
+    <section id="allPitches"></section>
     <h2>Possible gear configurations</h2>
     <div>
       <svg width="100%" height="100%" viewBox="0 0 1123 945" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
